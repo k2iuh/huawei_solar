@@ -1,0 +1,96 @@
+---
+# Checks weekly whether upstream has a new release and tries to rebase this fork's commits onto it.
+# It never publishes anything: it pushes a sync/<tag> branch and opens an issue with the outcome.
+name: Fork sync
+
+on: # yamllint disable rule:truthy
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+env:
+  UPSTREAM: https://github.com/wlcrs/huawei_solar.git
+  FORK_BRANCH: k2iuh
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.FORK_BRANCH }}
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - name: Find newest upstream release
+        id: tags
+        run: |
+          git remote add upstream "$UPSTREAM"
+          git fetch --quiet --tags upstream
+          base=$(cat .fork-base)
+          latest=$(git ls-remote --tags --refs upstream | sed 's#.*refs/tags/##' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "Fork base: $base, newest upstream release: $latest"
+      - name: Rebase onto new release and test
+        id: rebase
+        if: steps.tags.outputs.latest != steps.tags.outputs.base
+        env:
+          BASE: ${{ steps.tags.outputs.base }}
+          LATEST: ${{ steps.tags.outputs.latest }}
+        run: |
+          git config user.name "fork-sync"
+          git config user.email "fork-sync@users.noreply.github.com"
+          git switch -c "sync/$LATEST"
+          # Every upstream release bumps "version" in manifest.json, which conflicts with the fork's
+          # manifest changes. Such conflicts are resolved by keeping the fork's manifest; any other
+          # conflict is reported.
+          git rebase --onto "$LATEST" "$BASE" > rebase.log 2>&1 || true
+          while [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; do
+            conflicts=$(git diff --name-only --diff-filter=U)
+            if [ "$conflicts" != "manifest.json" ]; then
+              git rebase --abort
+              echo "result=conflict" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git checkout --theirs manifest.json
+            git add manifest.json
+            GIT_EDITOR=true git rebase --continue >> rebase.log 2>&1 || true
+          done
+          echo "$LATEST" > .fork-base
+          jq --arg v "$LATEST+k2iuh.1" '.version = $v' manifest.json > manifest.tmp
+          mv manifest.tmp manifest.json
+          git commit --quiet -am "chore: rebase fork onto $LATEST"
+          if uv run -p 3.14 --no-project --with-requirements requirements_test.txt \
+              pytest -c tests/pytest.ini tests > tests.log 2>&1; then
+            echo "result=ok" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=tests-failed" >> "$GITHUB_OUTPUT"
+          fi
+          git push --force origin "sync/$LATEST"
+      - name: Report
+        if: steps.rebase.outputs.result != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LATEST: ${{ steps.tags.outputs.latest }}
+          RESULT: ${{ steps.rebase.outputs.result }}
+        run: |
+          title="Upstream $LATEST: $RESULT"
+          if gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[].number' | grep -q .; then
+            exit 0
+          fi
+          {
+            case "$RESULT" in
+              ok) echo "Rebased cleanly onto $LATEST and tests pass. Branch: sync/$LATEST."
+                  echo "See FORK.md for the steps to finish the update." ;;
+              tests-failed) echo "Rebased onto $LATEST, but tests fail. Branch: sync/$LATEST."
+                  echo; echo '```'; tail -40 tests.log; echo '```' ;;
+              conflict) echo "Rebase onto $LATEST has conflicts and needs manual work."
+                  echo; echo '```'; tail -40 rebase.log; echo '```' ;;
+            esac
+          } > body.md
+          gh issue create --title "$title" --body-file body.md

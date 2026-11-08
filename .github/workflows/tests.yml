@@ -1,0 +1,16 @@
+---
+name: Tests
+
+on: # yamllint disable rule:truthy
+  push:
+  pull_request:
+  workflow_call:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Run tests
+        run: uv run -p 3.14 --no-project --with-requirements requirements_test.txt pytest -c tests/pytest.ini tests
