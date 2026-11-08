@@ -6,15 +6,15 @@
     ],
     "config_flow": true,
     "documentation": "https://github.com/wlcrs/huawei_solar/wiki",
-    "issue_tracker": "https://github.com/wlcrs/huawei_solar/issues",
+    "issue_tracker": "https://github.com/k2iuh/huawei_solar/issues",
     "requirements": [
-        "huawei-solar>=3.0.7"
+        "huawei-solar @ git+https://github.com/k2iuh/huawei-solar-lib@v3.0.7+k2iuh.1"
     ],
     "codeowners": [
         "@wlcrs"
     ],
     "iot_class": "local_polling",
-    "version": "2.1.5",
+    "version": "2.1.5+k2iuh.1",
     "loggers": [
         "huawei_solar",
         "tmodbus"
