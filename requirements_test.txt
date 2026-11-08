@@ -1,0 +1,2 @@
+pytest-homeassistant-custom-component==0.13.375
+huawei-solar @ git+https://github.com/k2iuh/huawei-solar-lib@v3.0.7+k2iuh.1

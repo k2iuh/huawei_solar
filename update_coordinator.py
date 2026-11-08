@@ -162,25 +162,3 @@ class HuaweiSolarOptimizerUpdateCoordinator(
             raise UpdateFailed(
                 f"Could not update {self.device.serial_number} optimizer values: {err}"
             ) from err
-
-
-async def create_optimizer_update_coordinator(
-    hass: HomeAssistant,
-    device: SUN2000Device,
-    optimizer_device_infos: dict[int, DeviceInfo],
-    update_interval: timedelta | None,
-) -> HuaweiSolarOptimizerUpdateCoordinator:
-    """Create and refresh entities of an HuaweiSolarOptimizerUpdateCoordinator."""
-
-    coordinator = HuaweiSolarOptimizerUpdateCoordinator(
-        hass,
-        _LOGGER,
-        device=device,
-        optimizer_device_infos=optimizer_device_infos,
-        name=f"{device.serial_number}_optimizer_data_update_coordinator",
-        update_interval=update_interval,
-    )
-
-    await coordinator.async_refresh()
-
-    return coordinator
