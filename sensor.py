@@ -2287,7 +2287,16 @@ async def async_setup_entry(
         elif isinstance(ucs.device, SmartLoggerDevice):
             entities_to_add.extend(create_smartlogger_entities(ucs))
 
-    async_add_entities(entities_to_add, True)
+    # Optimizer data is fetched in the background after setup (see optimizers.py),
+    # because reading it takes several seconds and would block the setup.
+    other_entities, optimizer_entities = [], []
+    for entity in entities_to_add:
+        if isinstance(entity, HuaweiSolarOptimizerSensorEntity):
+            optimizer_entities.append(entity)
+        else:
+            other_entities.append(entity)
+    async_add_entities(other_entities, True)
+    async_add_entities(optimizer_entities)
 
 
 class HuaweiSolarSensorEntity(

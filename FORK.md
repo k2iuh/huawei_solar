@@ -30,7 +30,9 @@ file 0x45 synchronously. After setup, a background task fetches the current valu
 0x45 again. If the optimizers changed, it updates the cache and reloads the config entry.
 
 - Code: `optimizers.py`, plus the optimizer block in `_setup_inverter_device_data` and the
-  background task at the end of `async_setup_entry` in `__init__.py`.
+  background task at the end of `async_setup_entry` in `__init__.py`. `async_setup_entry` in
+  `sensor.py` adds the optimizer entities without `update_before_add`, which would otherwise
+  wait for file 0x44.
 - Candidate for an upstream pull request. Upstream's AI policy requires that a human submits and
   explains it. Drop this patch when upstream has an equivalent.
 
