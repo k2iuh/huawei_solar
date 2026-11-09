@@ -50,6 +50,11 @@ from .const import (
     OPTIMIZER_UPDATE_INTERVAL,
     POWER_METER_UPDATE_INTERVAL,
 )
+from .optimizers import (
+    async_load_optimizers,
+    async_refresh_optimizers,
+    async_save_optimizers,
+)
 from .services import async_setup_services
 from .types import (
     HuaweiSolarConfigEntry,
@@ -57,8 +62,8 @@ from .types import (
     HuaweiSolarInverterData,
 )
 from .update_coordinator import (
+    HuaweiSolarOptimizerUpdateCoordinator,
     HuaweiSolarUpdateCoordinator,
-    create_optimizer_update_coordinator,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -304,6 +309,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: HuaweiSolarConfigEntry) 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await async_setup_services(hass, entry)
 
+    # Reading optimizer data takes tens of seconds, so it must not delay the setup.
+    for device_data in device_datas:
+        if (
+            isinstance(device_data, HuaweiSolarInverterData)
+            and device_data.optimizer_update_coordinator
+        ):
+            entry.async_create_background_task(
+                hass,
+                async_refresh_optimizers(
+                    hass,
+                    entry,
+                    device_data.device,
+                    device_data.optimizer_update_coordinator,
+                ),
+                f"huawei_solar optimizer refresh {device_data.device.serial_number}",
+            )
+
     return True
 
 
@@ -451,9 +473,13 @@ async def _setup_inverter_device_data(
         not isinstance(device.primary_device, SmartLoggerDevice)
     ):
         try:
-            optimizer_system_infos = (
-                await device.get_optimizer_system_information_data()
-            )
+            cached_optimizers = await async_load_optimizers(hass, device.serial_number)
+            if cached_optimizers is None:
+                cached_optimizers = await async_save_optimizers(
+                    hass,
+                    device.serial_number,
+                    await device.get_optimizer_system_information_data(),
+                )
 
             optimizers_device_infos = {
                 optimizer_id: DeviceInfo(
@@ -464,14 +490,16 @@ async def _setup_inverter_device_data(
                     sw_version=optimizer.software_version,
                     via_device_id=ha_device.id,
                 )
-                for optimizer_id, optimizer in optimizer_system_infos.items()
+                for optimizer_id, optimizer in cached_optimizers.items()
             }
 
-            optimizer_update_coordinator = await create_optimizer_update_coordinator(
+            optimizer_update_coordinator = HuaweiSolarOptimizerUpdateCoordinator(
                 hass,
-                device,
-                optimizers_device_infos,
-                OPTIMIZER_UPDATE_INTERVAL,
+                _LOGGER,
+                device=device,
+                optimizer_device_infos=optimizers_device_infos,
+                name=f"{device.serial_number}_optimizer_data_update_coordinator",
+                update_interval=OPTIMIZER_UPDATE_INTERVAL,
             )
         except ConfigEntryNotReady:
             raise
